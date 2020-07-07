@@ -162,7 +162,7 @@ def vocoder_griffin_lim(mel_spec, mel_len, mel_params, gl_type="cuda"):
         griffin_lim_fn = griffin_lim_th
     else:
         griffin_lim_fn = griffin_lim_np
-        magnitudes = magnitudes.cpu().numpy()
+        magnitudes = magnitudes.cpu().detach().numpy()
     
     for j, sample in enumerate(magnitudes):
         sample = sample[:, :mel_len[j]]

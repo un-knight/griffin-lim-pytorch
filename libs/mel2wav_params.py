@@ -18,7 +18,7 @@ class Mel2WavParams(object):
         return list(self.__kwargs.keys()) + origin_dir
 
 m2w_params = Mel2WavParams(
-    max_wav_value = 1, # Maximum audiowave value, 1 for mandarin, 32768 for english
+    max_wav_value = 32768, # Maximum audiowave value, 1 for mandarin, 32768 for english
     sampling_rate = 22050, # Sampling rate
     filter_length = 1024,
     hop_length = 256,

@@ -32,6 +32,8 @@ def get_filterbank(mel_params):
             n_mels=mel_params.n_mel_channels,
             fmin=mel_params.mel_fmin,
             fmax=mel_params.mel_fmax)
+        filterbank = np.linalg.pinv(filterbank).transpose()
+        filterbank = np.ascontiguousarray(filterbank)
         filterbank = torch.from_numpy(filterbank)
     return filterbank
 
@@ -42,7 +44,7 @@ def griffin_lim_np(magnitudes, mel_params):
     phase = np.exp(2j * np.pi * np.random.rand(*magnitudes.shape).astype(np.float32))
     complex_spec = magnitudes * phase
     signal = librosa.istft(
-                        stft_matrix=complex_spec, 
+                        stft_matrix=complex_spec,
                         hop_length=mel_params.hop_length,
                         win_length=mel_params.win_length)
     if not np.isfinite(signal).all():
@@ -51,14 +53,14 @@ def griffin_lim_np(magnitudes, mel_params):
 
     for _ in range(mel_params.griffin_lim_iters):
         stft_matrix = librosa.stft(
-                        y=signal, 
+                        y=signal,
                         n_fft=mel_params.n_fft,
                         hop_length=mel_params.hop_length,
                         win_length=mel_params.win_length)
         phase = np.exp(1.j * np.angle(stft_matrix))
         complex_spec = magnitudes * phase
         signal = librosa.istft(
-                        stft_matrix=complex_spec, 
+                        stft_matrix=complex_spec,
                         hop_length=mel_params.hop_length,
                         win_length=mel_params.win_length)
     return signal
@@ -75,7 +77,7 @@ def griffin_lim_th(magnitudes, mel_params):
 
     Returns
     -----------
-    signal: synthesis wav signal with 
+    signal: synthesis wav signal with
     """
     phase = cp.exp(2j * cp.pi * cp.random.rand(*magnitudes.shape, dtype=cp.float32))
     # complex_spec = magnitudes * phase
@@ -88,19 +90,19 @@ def griffin_lim_th(magnitudes, mel_params):
         """
         phase_real = c2t(cp.real(phase))
         phase_imag = c2t(cp.imag(phase))
-        
+
         input_real = magnitudes * phase_real
         input_imag = magnitudes * phase_imag
 
         # a virtual complex solution, since pytorch doesn't support complex type
         complex_spec = torch.cat([input_real.unsqueeze(dim=-1), input_imag.unsqueeze(dim=-1)], dim=-1)
         return complex_spec
-    
+
     # add window to mitigate high frequence signal impact
     window = torch.hann_window(window_length=mel_params.win_length, device=magnitudes.device)
     complex_spec = mul_phase(magnitudes, phase)
     signal = torchaudio.functional.istft(
-                        stft_matrix=complex_spec, 
+                        stft_matrix=complex_spec,
                         n_fft=mel_params.n_fft,
                         hop_length=mel_params.hop_length,
                         win_length=mel_params.win_length,
@@ -111,7 +113,7 @@ def griffin_lim_th(magnitudes, mel_params):
 
     for _ in range(mel_params.griffin_lim_iters):
         stft_matrix = torch.stft(
-                        signal, 
+                        signal,
                         n_fft=mel_params.n_fft,
                         hop_length=mel_params.hop_length,
                         win_length=mel_params.win_length)
@@ -136,7 +138,7 @@ def vocoder_griffin_lim(mel_spec, mel_len, mel_params, gl_type="cuda"):
     ------------
     mel_spec: torch type tensor [B, n_mel_channels, mel_len]
     mel_len: torch type tensor [B]
-    mel_params: 
+    mel_params:
     gl_type: target device to excute griffin-lim function, choice between "cpu" and "cuda"
 
     Returns
@@ -154,20 +156,21 @@ def vocoder_griffin_lim(mel_spec, mel_len, mel_params, gl_type="cuda"):
     mel = torch.exp(mel_spec)
     filterbank = get_filterbank(mel_params).to(mel.device)
     # inverted mel spectrograms into linear frequency spectrograms
-    magnitudes = (torch.matmul(mel, filterbank) * mel_params.griffin_lim_mag_scale) ** mel_params.griffin_lim_power
+    # magnitudes = (torch.matmul(mel, filterbank) * mel_params.griffin_lim_mag_scale) ** mel_params.griffin_lim_power
+    magnitudes = torch.pow(torch.matmul(mel, filterbank)*1.0, 1)
     magnitudes = magnitudes.permute(0, 2, 1)
-    
+
     griffin_lim_fn = None
     if gl_type == "cuda":
         griffin_lim_fn = griffin_lim_th
     else:
         griffin_lim_fn = griffin_lim_np
         magnitudes = magnitudes.cpu().detach().numpy()
-    
+
     for j, sample in enumerate(magnitudes):
         sample = sample[:, :mel_len[j]]
         wav = griffin_lim_fn(
-            sample, 
+            sample,
             mel_params
             )
         wavs.append(wav)
